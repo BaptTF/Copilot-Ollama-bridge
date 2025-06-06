@@ -1,0 +1,62 @@
+{
+  "name": "copilot-ollama-bridge",
+  "displayName": "Copilot Ollama Bridge",
+  "description": "Expose GitHub Copilot through Ollama-compatible API endpoints",
+  "version": "1.1.0",
+  "publisher": "local",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/BaptTF/Copilot-Ollama-bridge"
+  },
+  "engines": {
+    "vscode": "^1.84.0"
+  },
+  "categories": [
+    "Other"
+  ],
+  "activationEvents": [
+    "onStartupFinished"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      {
+        "command": "copilot-bridge.start",
+        "title": "Start Copilot Bridge Server"
+      },
+      {
+        "command": "copilot-bridge.stop", 
+        "title": "Stop Copilot Bridge Server"
+      },
+      {
+        "command": "copilot-bridge.restart",
+        "title": "Restart Copilot Bridge Server"
+      }
+    ],
+    "configuration": {
+      "title": "Copilot Ollama Bridge",
+      "properties": {
+        "copilot-bridge.port": {
+          "type": "number",
+          "default": 11434,
+          "description": "Port for the Ollama-compatible API server"
+        },
+        "copilot-bridge.autoStart": {
+          "type": "boolean",
+          "default": true,
+          "description": "Automatically start the bridge on VS Code startup"
+        }
+      }
+    }
+  },
+  "scripts": {
+    "vscode:prepublish": "npm run compile",
+    "compile": "tsc -p ./",
+    "watch": "tsc -watch -p ./"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.84.0",
+    "@types/node": "18.x",
+    "typescript": "^5.0.0"
+  }
+}
