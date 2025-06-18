@@ -88,7 +88,7 @@ class CopilotOllamaBridge {
     private outputChannel: vscode.OutputChannel;
 
     constructor() {
-        this.port = vscode.workspace.getConfiguration('copilot-bridge').get('port', 11434);
+        this.port = vscode.workspace.getConfiguration('copilot-bridge').get('port', 11435);
         this.statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
         this.statusBarItem.command = 'copilot-bridge.restart';
         this.outputChannel = vscode.window.createOutputChannel('Copilot Bridge');

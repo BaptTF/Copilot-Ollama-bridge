@@ -4,7 +4,7 @@ echo "🧪 Testing OpenAI-compatible /v1/chat/completions endpoint"
 echo "========================================================="
 
 # Test the exact request format from the Obsidian plugin
-curl 'http://localhost:11435/v1/chat/completions' \
+curl 'http://localhost:11434/v1/chat/completions' \
   -H 'authorization: Bearer' \
   -H 'accept: application/json' \
   -H 'content-type: application/json' \
