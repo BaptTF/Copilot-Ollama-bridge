@@ -27,6 +27,46 @@ interface OllamaChatRequest {
     };
 }
 
+interface OpenAIChatRequest {
+    model: string;
+    messages: Array<{
+        role: string;
+        content: string | Array<{ type: string; text: string }>;
+    }>;
+    tools?: any[];
+    stream?: boolean;
+    stream_options?: {
+        include_usage?: boolean;
+    };
+    temperature?: number;
+    max_tokens?: number;
+    top_p?: number;
+}
+
+interface OpenAIChatResponse {
+    id: string;
+    object: string;
+    created: number;
+    model: string;
+    choices: Array<{
+        index: number;
+        message?: {
+            role: string;
+            content: string;
+        };
+        delta?: {
+            role?: string;
+            content?: string;
+        };
+        finish_reason: string | null;
+    }>;
+    usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+    };
+}
+
 interface OllamaModel {
     name: string;
     size: number;
@@ -106,6 +146,9 @@ class CopilotOllamaBridge {
             this.outputChannel.appendLine(`  POST /api/generate - Generate completion`);
             this.outputChannel.appendLine(`  POST /api/chat     - Chat completion`);
             this.outputChannel.appendLine('');
+            this.outputChannel.appendLine('OpenAI-compatible endpoints:');
+            this.outputChannel.appendLine(`  POST /v1/chat/completions - OpenAI chat completions`);
+            this.outputChannel.appendLine('');
             this.outputChannel.appendLine('Usage with Cline:');
             this.outputChannel.appendLine(`  Ollama URL: http://localhost:${this.port}`);
             this.outputChannel.appendLine('  Model: copilot:latest');
@@ -148,7 +191,7 @@ class CopilotOllamaBridge {
         // Set CORS headers
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
 
         if (req.method === 'OPTIONS') {
             res.writeHead(200);
@@ -168,6 +211,9 @@ class CopilotOllamaBridge {
                     break;
                 case '/api/chat':
                     await this.handleChat(req, res);
+                    break;
+                case '/v1/chat/completions':
+                    await this.handleOpenAIChat(req, res);
                     break;
                 case '/':
                     await this.handleRoot(res);
@@ -343,6 +389,145 @@ class CopilotOllamaBridge {
         }
     }
 
+    private async handleOpenAIChat(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+        if (req.method !== 'POST') {
+            res.writeHead(405, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ error: 'Method not allowed' }));
+            return;
+        }
+
+        const body = await this.readRequestBody(req);
+        const request: OpenAIChatRequest = JSON.parse(body);
+
+        this.outputChannel.appendLine(`OpenAI Chat: ${request.messages.length} messages, stream=${request.stream}`);
+
+        try {
+            // Convert OpenAI messages to simple prompt format
+            const prompt = this.convertOpenAIMessagesToPrompt(request.messages);
+            const response = await this.generateWithCopilot(prompt, request.model);
+            
+            const chatId = `chatcmpl-${Date.now()}`;
+            const created = Math.floor(Date.now() / 1000);
+            
+            if (request.stream) {
+                // Handle streaming response
+                res.writeHead(200, {
+                    'Content-Type': 'text/plain',
+                    'Cache-Control': 'no-cache',
+                    'Connection': 'keep-alive'
+                });
+
+                // Send initial chunk with role
+                const initialChunk: OpenAIChatResponse = {
+                    id: chatId,
+                    object: 'chat.completion.chunk',
+                    created: created,
+                    model: request.model,
+                    choices: [{
+                        index: 0,
+                        delta: {
+                            role: 'assistant'
+                        },
+                        finish_reason: null
+                    }]
+                };
+                res.write(`data: ${JSON.stringify(initialChunk)}\n\n`);
+
+                // Send content chunks (simulate streaming by splitting response)
+                const words = response.split(' ');
+                for (let i = 0; i < words.length; i++) {
+                    const chunk: OpenAIChatResponse = {
+                        id: chatId,
+                        object: 'chat.completion.chunk',
+                        created: created,
+                        model: request.model,
+                        choices: [{
+                            index: 0,
+                            delta: {
+                                content: (i === 0 ? words[i] : ' ' + words[i])
+                            },
+                            finish_reason: null
+                        }]
+                    };
+                    res.write(`data: ${JSON.stringify(chunk)}\n\n`);
+                }
+
+                // Send final chunk
+                const finalChunk: OpenAIChatResponse = {
+                    id: chatId,
+                    object: 'chat.completion.chunk',
+                    created: created,
+                    model: request.model,
+                    choices: [{
+                        index: 0,
+                        delta: {},
+                        finish_reason: 'stop'
+                    }]
+                };
+                res.write(`data: ${JSON.stringify(finalChunk)}\n\n`);
+
+                // Send usage info if requested
+                if (request.stream_options?.include_usage) {
+                    const usageChunk = {
+                        id: chatId,
+                        object: 'chat.completion.chunk',
+                        created: created,
+                        model: request.model,
+                        choices: [],
+                        usage: {
+                            prompt_tokens: prompt.split(' ').length,
+                            completion_tokens: response.split(' ').length,
+                            total_tokens: prompt.split(' ').length + response.split(' ').length
+                        }
+                    };
+                    res.write(`data: ${JSON.stringify(usageChunk)}\n\n`);
+                }
+
+                res.write('data: [DONE]\n\n');
+                res.end();
+
+            } else {
+                // Handle non-streaming response
+                const openaiResponse: OpenAIChatResponse = {
+                    id: chatId,
+                    object: 'chat.completion',
+                    created: created,
+                    model: request.model,
+                    choices: [{
+                        index: 0,
+                        message: {
+                            role: 'assistant',
+                            content: response
+                        },
+                        finish_reason: 'stop'
+                    }],
+                    usage: {
+                        prompt_tokens: prompt.split(' ').length,
+                        completion_tokens: response.split(' ').length,
+                        total_tokens: prompt.split(' ').length + response.split(' ').length
+                    }
+                };
+
+                res.writeHead(200, { 'Content-Type': 'application/json' });
+                res.end(JSON.stringify(openaiResponse));
+            }
+
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ OpenAI Chat error: ${error}`);
+            
+            const errorResponse = {
+                error: {
+                    message: `I'm sorry, I encountered an error: ${error}`,
+                    type: 'internal_error',
+                    code: 'copilot_error'
+                }
+            };
+
+            res.writeHead(500, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(errorResponse));
+        }
+    }
+
     private async handleRoot(res: http.ServerResponse): Promise<void> {
         const html = `
 <!DOCTYPE html>
@@ -389,6 +574,16 @@ class CopilotOllamaBridge {
             <pre>curl -X POST http://localhost:${this.port}/api/chat \\
   -H "Content-Type: application/json" \\
   -d '{"model":"copilot:latest","messages":[{"role":"user","content":"Write a function"}]}'</pre>
+        </div>
+        
+        <h2>🔗 OpenAI-Compatible Endpoints</h2>
+        
+        <div class="endpoint">
+            <h3>POST /v1/chat/completions</h3>
+            <p>OpenAI-compatible chat completions with streaming support</p>
+            <pre>curl -X POST http://localhost:${this.port}/v1/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"test","messages":[{"role":"user","content":"Hello"}],"stream":true}'</pre>
         </div>
         
         <h2>🔧 Usage with Cline</h2>
@@ -501,6 +696,24 @@ class CopilotOllamaBridge {
     private convertChatToPrompt(messages: Array<{ role: string; content: string }>): string {
         return messages
             .map(msg => `${msg.role}: ${msg.content}`)
+            .join('\n') + '\nassistant: ';
+    }
+
+    private convertOpenAIMessagesToPrompt(messages: Array<{ role: string; content: string | Array<{ type: string; text: string }> }>): string {
+        return messages
+            .map(msg => {
+                let content = '';
+                if (typeof msg.content === 'string') {
+                    content = msg.content;
+                } else if (Array.isArray(msg.content)) {
+                    // Handle complex content with text and potentially other types
+                    content = msg.content
+                        .filter(item => item.type === 'text')
+                        .map(item => item.text)
+                        .join(' ');
+                }
+                return `${msg.role}: ${content}`;
+            })
             .join('\n') + '\nassistant: ';
     }
 

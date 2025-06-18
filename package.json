@@ -2,7 +2,7 @@
   "name": "copilot-ollama-bridge",
   "displayName": "Copilot Ollama Bridge",
   "description": "Expose GitHub Copilot through Ollama-compatible API endpoints",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "publisher": "local",
   "repository": {
     "type": "git",
