@@ -144,6 +144,8 @@ class CopilotOllamaBridge {
             this.outputChannel.appendLine('');
             this.outputChannel.appendLine('Ollama-compatible endpoints:');
             this.outputChannel.appendLine(`  GET  /api/tags     - List models`);
+            this.outputChannel.appendLine(`  GET  /api/version  - Server version`);
+            this.outputChannel.appendLine(`  GET  /api/ps       - List running models`);
             this.outputChannel.appendLine(`  POST /api/generate - Generate completion`);
             this.outputChannel.appendLine(`  POST /api/chat     - Chat completion`);
             this.outputChannel.appendLine('');
@@ -207,6 +209,12 @@ class CopilotOllamaBridge {
                 case '/api/tags':
                     await this.handleTags(res);
                     break;
+                case '/api/version':
+                    await this.handleVersion(res);
+                    break;
+                case '/api/ps':
+                    await this.handlePs(res);
+                    break;
                 case '/api/generate':
                     await this.handleGenerate(req, res);
                     break;
@@ -227,6 +235,93 @@ class CopilotOllamaBridge {
             this.outputChannel.appendLine(`❌ Error: ${error}`);
             res.writeHead(500, { 'Content-Type': 'application/json' });
             res.end(JSON.stringify({ error: 'Internal server error' }));
+        }
+    }
+
+    private async handleVersion(res: http.ServerResponse): Promise<void> {
+        const versionInfo = {
+            version: "0.1.20",
+            git_commit: "copilot-bridge-v1.4.0",
+            built_at: new Date().toISOString()
+        };
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(versionInfo));
+    }
+
+    private async handlePs(res: http.ServerResponse): Promise<void> {
+        try {
+            // Get all available Copilot models to show as "running" models
+            const copilotModels = await this.getAvailableCopilotModels();
+            
+            const runningModels = {
+                models: copilotModels.map(model => ({
+                    name: `copilot:${model.family}`,
+                    model: `copilot:${model.family}`,
+                    size: 1000000000,
+                    digest: `sha256:copilot-${model.family}`,
+                    details: {
+                        parent_model: "",
+                        format: "copilot",
+                        family: model.family,
+                        families: ["github"],
+                        parameter_size: "Unknown",
+                        quantization_level: "None"
+                    },
+                    expires_at: "2024-12-31T23:59:59Z",
+                    size_vram: 0
+                }))
+            };
+
+            // Add the generic 'latest' model
+            if (copilotModels.length > 0) {
+                runningModels.models.unshift({
+                    name: 'copilot:latest',
+                    model: 'copilot:latest',
+                    size: 1000000000,
+                    digest: 'sha256:copilot-latest',
+                    details: {
+                        parent_model: "",
+                        format: 'copilot',
+                        family: copilotModels[0].family,
+                        families: ['github'],
+                        parameter_size: 'Unknown',
+                        quantization_level: 'None'
+                    },
+                    expires_at: "2024-12-31T23:59:59Z",
+                    size_vram: 0
+                });
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(runningModels));
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Error fetching running models: ${error}`);
+            // Fallback to basic model list
+            const fallbackModels = {
+                models: [
+                    {
+                        name: 'copilot:latest',
+                        model: 'copilot:latest',
+                        size: 1000000000,
+                        digest: 'sha256:copilot-latest',
+                        details: {
+                            parent_model: "",
+                            format: 'copilot',
+                            family: 'gpt-4o',
+                            families: ['github'],
+                            parameter_size: 'Unknown',
+                            quantization_level: 'None'
+                        },
+                        expires_at: "2024-12-31T23:59:59Z",
+                        size_vram: 0
+                    }
+                ]
+            };
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(fallbackModels));
         }
     }
 
@@ -562,6 +657,18 @@ class CopilotOllamaBridge {
             <h3>GET /api/tags</h3>
             <p>List available models</p>
             <pre>curl http://localhost:${this.port}/api/tags</pre>
+        </div>
+        
+        <div class="endpoint">
+            <h3>GET /api/version</h3>
+            <p>Get server version information</p>
+            <pre>curl http://localhost:${this.port}/api/version</pre>
+        </div>
+        
+        <div class="endpoint">
+            <h3>GET /api/ps</h3>
+            <p>List running models</p>
+            <pre>curl http://localhost:${this.port}/api/ps</pre>
         </div>
         
         <div class="endpoint">
