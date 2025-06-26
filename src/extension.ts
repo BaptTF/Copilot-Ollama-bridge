@@ -69,6 +69,7 @@ interface OpenAIChatResponse {
 
 interface OllamaModel {
     name: string;
+    model: string;
     size: number;
     digest: string;
     modified_at: string;
@@ -237,6 +238,7 @@ class CopilotOllamaBridge {
             const models: { models: OllamaModel[] } = {
                 models: copilotModels.map(model => ({
                     name: `copilot:${model.family}`,
+                    model: `copilot:${model.family}`,
                     size: 1000000000,
                     digest: `sha256:copilot-${model.family}`,
                     modified_at: new Date().toISOString(),
@@ -254,6 +256,7 @@ class CopilotOllamaBridge {
             if (copilotModels.length > 0) {
                 models.models.unshift({
                     name: 'copilot:latest',
+                    model: 'copilot:latest',
                     size: 1000000000,
                     digest: 'sha256:copilot-latest',
                     modified_at: new Date().toISOString(),
@@ -277,6 +280,7 @@ class CopilotOllamaBridge {
                 models: [
                     {
                         name: 'copilot:latest',
+                        model: 'copilot:latest',
                         size: 1000000000,
                         digest: 'sha256:copilot-latest',
                         modified_at: new Date().toISOString(),
