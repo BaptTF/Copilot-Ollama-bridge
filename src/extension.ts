@@ -150,7 +150,10 @@ class CopilotOllamaBridge {
             this.outputChannel.appendLine(`  POST /api/chat     - Chat completion`);
             this.outputChannel.appendLine('');
             this.outputChannel.appendLine('OpenAI-compatible endpoints:');
+            this.outputChannel.appendLine(`  GET  /v1/models           - List models (OpenAI format)`);
+            this.outputChannel.appendLine(`  GET  /models              - List models (OpenAI format)`);
             this.outputChannel.appendLine(`  POST /v1/chat/completions - OpenAI chat completions`);
+            this.outputChannel.appendLine(`  POST /chat/completions    - OpenAI chat (Open WebUI)`);
             this.outputChannel.appendLine('');
             this.outputChannel.appendLine('Usage with Cline:');
             this.outputChannel.appendLine(`  Ollama URL: http://localhost:${this.port}`);
@@ -223,6 +226,15 @@ class CopilotOllamaBridge {
                     break;
                 case '/v1/chat/completions':
                     await this.handleOpenAIChat(req, res);
+                    break;
+                case '/chat/completions':
+                    await this.handleOpenAIChat(req, res);
+                    break;
+                case '/v1/models':
+                    await this.handleOpenAIModels(res);
+                    break;
+                case '/models':
+                    await this.handleOpenAIModels(res);
                     break;
                 case '/':
                     await this.handleRoot(res);
@@ -488,6 +500,108 @@ class CopilotOllamaBridge {
         }
     }
 
+    private async handleOpenAIModels(res: http.ServerResponse): Promise<void> {
+        try {
+            // Get all available Copilot models
+            const copilotModels = await this.getAvailableCopilotModels();
+            
+            const openaiModels = {
+                object: "list",
+                data: copilotModels.map(model => ({
+                    id: `copilot:${model.family}`,
+                    object: "model",
+                    created: Math.floor(Date.now() / 1000),
+                    owned_by: "github",
+                    permission: [
+                        {
+                            id: `modelperm-${model.family}`,
+                            object: "model_permission",
+                            created: Math.floor(Date.now() / 1000),
+                            allow_create_engine: false,
+                            allow_sampling: true,
+                            allow_logprobs: false,
+                            allow_search_indices: false,
+                            allow_view: true,
+                            allow_fine_tuning: false,
+                            organization: "*",
+                            group: null,
+                            is_blocking: false
+                        }
+                    ],
+                    root: `copilot:${model.family}`,
+                    parent: null
+                }))
+            };
+
+            // Add the generic 'latest' model
+            if (copilotModels.length > 0) {
+                openaiModels.data.unshift({
+                    id: 'copilot:latest',
+                    object: "model",
+                    created: Math.floor(Date.now() / 1000),
+                    owned_by: "github",
+                    permission: [
+                        {
+                            id: "modelperm-latest",
+                            object: "model_permission",
+                            created: Math.floor(Date.now() / 1000),
+                            allow_create_engine: false,
+                            allow_sampling: true,
+                            allow_logprobs: false,
+                            allow_search_indices: false,
+                            allow_view: true,
+                            allow_fine_tuning: false,
+                            organization: "*",
+                            group: null,
+                            is_blocking: false
+                        }
+                    ],
+                    root: 'copilot:latest',
+                    parent: null
+                });
+            }
+
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(openaiModels));
+            
+        } catch (error) {
+            this.outputChannel.appendLine(`❌ Error fetching OpenAI models: ${error}`);
+            // Fallback to basic model list
+            const fallbackModels = {
+                object: "list",
+                data: [
+                    {
+                        id: 'copilot:latest',
+                        object: "model",
+                        created: Math.floor(Date.now() / 1000),
+                        owned_by: "github",
+                        permission: [
+                            {
+                                id: "modelperm-latest",
+                                object: "model_permission",
+                                created: Math.floor(Date.now() / 1000),
+                                allow_create_engine: false,
+                                allow_sampling: true,
+                                allow_logprobs: false,
+                                allow_search_indices: false,
+                                allow_view: true,
+                                allow_fine_tuning: false,
+                                organization: "*",
+                                group: null,
+                                is_blocking: false
+                            }
+                        ],
+                        root: 'copilot:latest',
+                        parent: null
+                    }
+                ]
+            };
+            
+            res.writeHead(200, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify(fallbackModels));
+        }
+    }
+
     private async handleOpenAIChat(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
         if (req.method !== 'POST') {
             res.writeHead(405, { 'Content-Type': 'application/json' });
@@ -690,11 +804,31 @@ class CopilotOllamaBridge {
         <h2>🔗 OpenAI-Compatible Endpoints</h2>
         
         <div class="endpoint">
+            <h3>GET /v1/models</h3>
+            <p>List available models (OpenAI format)</p>
+            <pre>curl http://localhost:${this.port}/v1/models</pre>
+        </div>
+        
+        <div class="endpoint">
+            <h3>GET /models</h3>
+            <p>List available models (OpenAI format)</p>
+            <pre>curl http://localhost:${this.port}/models</pre>
+        </div>
+        
+        <div class="endpoint">
             <h3>POST /v1/chat/completions</h3>
             <p>OpenAI-compatible chat completions with streaming support</p>
             <pre>curl -X POST http://localhost:${this.port}/v1/chat/completions \\
   -H "Content-Type: application/json" \\
-  -d '{"model":"test","messages":[{"role":"user","content":"Hello"}],"stream":true}'</pre>
+  -d '{"model":"copilot:latest","messages":[{"role":"user","content":"Hello"}],"stream":true}'</pre>
+        </div>
+        
+        <div class="endpoint">
+            <h3>POST /chat/completions</h3>
+            <p>OpenAI chat completions (Open WebUI format)</p>
+            <pre>curl -X POST http://localhost:${this.port}/chat/completions \\
+  -H "Content-Type: application/json" \\
+  -d '{"model":"copilot:latest","messages":[{"role":"user","content":"Hello"}]}'</pre>
         </div>
         
         <h2>🔧 Usage with Cline</h2>
